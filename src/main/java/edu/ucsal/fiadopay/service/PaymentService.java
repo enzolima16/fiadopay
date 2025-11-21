@@ -42,6 +42,10 @@ public class PaymentService {
   private PaymentMethodProcessor paymentMethodProcessor;
   @Autowired
   private WebhookSinkProcessor webhookSinkProcessor;
+  @Autowired
+  private FraudDetectionService fraudDetectionService;
+
+  private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PaymentService.class);
 
   @Value("${fiadopay.webhook-secret}")
   String secret;
@@ -91,7 +95,7 @@ public class PaymentService {
     PaymentHandler handler = paymentMethodProcessor.getHandler(method);
 
     if (handler == null) {
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Método de pagamento não suportado");
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Método de pagamento não suportado");
     }
 
     var payment = Payment.builder()
@@ -109,17 +113,23 @@ public class PaymentService {
         .build();
 
     if (!handler.validate(payment)) {
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Parâmetros inválidos para o método de pagamento");
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Parâmetros inválidos para o método de pagamento");
+    }
+
+    var fraudEval = fraudDetectionService.evaluate(payment);
+    if (fraudEval.isHighRisk()) {
+      log.warn("Payment {} auto-declined: {}", payment.getId(), fraudEval.getSummary());
+      payment.setStatus(Payment.Status.DECLINED);
+      payments.save(payment);
+      return toResponse(payment);
     }
 
     handler.process(payment);
     payments.save(payment);
 
     // 📡 Dispara sinks internos
-      webhookSinkProcessor.dispatch(
-              WebhookEventData.fromPayment(payment, WebhookEvent.PAYMENT_CREATED)
-      );
-
+    webhookSinkProcessor.dispatch(
+        WebhookEventData.fromPayment(payment, WebhookEvent.PAYMENT_CREATED));
 
     CompletableFuture.runAsync(() -> processAndWebhook(payment.getId()));
 
@@ -141,10 +151,9 @@ public class PaymentService {
     p.setStatus(Payment.Status.REFUNDED);
     p.setUpdatedAt(Instant.now());
     payments.save(p);
-      // 📡 Dispara sinks de estorno
-      webhookSinkProcessor.dispatch(
-              WebhookEventData.fromPayment(p, WebhookEvent.PAYMENT_REFUNDED)
-      );
+    // 📡 Dispara sinks de estorno
+    webhookSinkProcessor.dispatch(
+        WebhookEventData.fromPayment(p, WebhookEvent.PAYMENT_REFUNDED));
     sendWebhook(p);
     return Map.of("id", "ref_" + UUID.randomUUID(), "status", "PENDING");
   }
@@ -163,12 +172,11 @@ public class PaymentService {
     p.setUpdatedAt(Instant.now());
     payments.save(p);
 
-      // 📡 Dispara sinks de mudança de status
-      WebhookEvent event = WebhookEvent.fromPaymentStatus(p.getStatus());
-      webhookSinkProcessor.dispatch(WebhookEventData.fromPayment(p, event));
+    // 📡 Dispara sinks de mudança de status
+    WebhookEvent event = WebhookEvent.fromPaymentStatus(p.getStatus());
+    webhookSinkProcessor.dispatch(WebhookEventData.fromPayment(p, event));
 
-
-      sendWebhook(p);
+    sendWebhook(p);
   }
 
   private void sendWebhook(Payment p) {
