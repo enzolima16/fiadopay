@@ -20,6 +20,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.beans.factory.annotation.Qualifier;
+
+import java.util.concurrent.Executor;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -31,6 +34,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+
 @Service
 public class PaymentService {
   private final MerchantRepository merchants;
@@ -40,10 +44,20 @@ public class PaymentService {
 
   @Autowired
   private PaymentMethodProcessor paymentMethodProcessor;
+
   @Autowired
   private WebhookSinkProcessor webhookSinkProcessor;
+
   @Autowired
   private FraudDetectionService fraudDetectionService;
+
+  @Autowired
+  @Qualifier("paymentExecutor")
+  private Executor paymentExecutor;
+
+  @Autowired
+  @Qualifier("webhookExecutor")
+  private Executor webhookExecutor;
 
   private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PaymentService.class);
 
@@ -113,10 +127,14 @@ public class PaymentService {
         .build();
 
     if (!handler.validate(payment)) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Parâmetros inválidos para o método de pagamento");
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Parâmetros inválidos para o método de pagamento: " + method);
     }
 
+    handler.process(payment);
+
     var fraudEval = fraudDetectionService.evaluate(payment);
+    log.info("Fraud evaluation for {}: score={} ({})", payment.getId(), fraudEval.score(), fraudEval.getSummary()); 
+
     if (fraudEval.isHighRisk()) {
       log.warn("Payment {} auto-declined: {}", payment.getId(), fraudEval.getSummary());
       payment.setStatus(Payment.Status.DECLINED);
@@ -132,6 +150,21 @@ public class PaymentService {
         WebhookEventData.fromPayment(payment, WebhookEvent.PAYMENT_CREATED));
 
     CompletableFuture.runAsync(() -> processAndWebhook(payment.getId()));
+
+    if (payment.getStatus() == Payment.Status.PENDING) {
+      paymentExecutor.execute(() -> {
+          try {
+              log.debug("💳 Processing payment {} in thread: {}", 
+                  payment.getId(), Thread.currentThread().getName());
+              processAndWebhook(payment.getId());
+          } catch (Exception e) {
+              log.error("❌ Payment processing failed for {}", payment.getId(), e);
+          }
+      });
+  } else {
+      // Se já foi recusado por fraude, envia webhook imediatamente
+      sendWebhook(payment);
+  }
 
     return toResponse(payment);
   }
@@ -214,7 +247,15 @@ public class PaymentService {
         .lastAttemptAt(null)
         .build());
 
-    CompletableFuture.runAsync(() -> tryDeliver(delivery.getId()));
+      webhookExecutor.execute(() -> {
+        try {
+            log.debug("📡 Delivering webhook {} in thread: {}", 
+                delivery.getId(), Thread.currentThread().getName());
+            tryDeliver(delivery.getId());
+        } catch (Exception e) {
+            log.error("Webhook delivery failed for {}", delivery.getId(), e);
+        }
+      });
   }
 
   private void tryDeliver(Long deliveryId) {
