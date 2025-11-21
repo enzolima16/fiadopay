@@ -3,11 +3,14 @@ package edu.ucsal.fiadopay.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import edu.ucsal.fiadopay.controller.PaymentRequest;
 import edu.ucsal.fiadopay.controller.PaymentResponse;
+import edu.ucsal.fiadopay.controller.WebhookEventData;
 import edu.ucsal.fiadopay.domain.Merchant;
 import edu.ucsal.fiadopay.domain.Payment;
 import edu.ucsal.fiadopay.domain.WebhookDelivery;
+import edu.ucsal.fiadopay.domain.WebhookEvent;
 import edu.ucsal.fiadopay.plugin.paymentmethod.PaymentHandler;
 import edu.ucsal.fiadopay.processor.PaymentMethodProcessor;
+import edu.ucsal.fiadopay.processor.WebhookSinkProcessor;
 import edu.ucsal.fiadopay.repo.MerchantRepository;
 import edu.ucsal.fiadopay.repo.PaymentRepository;
 import edu.ucsal.fiadopay.repo.WebhookDeliveryRepository;
@@ -37,6 +40,8 @@ public class PaymentService {
 
   @Autowired
   private PaymentMethodProcessor paymentMethodProcessor;
+  @Autowired
+  private WebhookSinkProcessor webhookSinkProcessor;
 
   @Value("${fiadopay.webhook-secret}")
   String secret;
@@ -110,6 +115,12 @@ public class PaymentService {
     handler.process(payment);
     payments.save(payment);
 
+    // 📡 Dispara sinks internos
+      webhookSinkProcessor.dispatch(
+              WebhookEventData.fromPayment(payment, WebhookEvent.PAYMENT_CREATED)
+      );
+
+
     CompletableFuture.runAsync(() -> processAndWebhook(payment.getId()));
 
     return toResponse(payment);
@@ -130,6 +141,10 @@ public class PaymentService {
     p.setStatus(Payment.Status.REFUNDED);
     p.setUpdatedAt(Instant.now());
     payments.save(p);
+      // 📡 Dispara sinks de estorno
+      webhookSinkProcessor.dispatch(
+              WebhookEventData.fromPayment(p, WebhookEvent.PAYMENT_REFUNDED)
+      );
     sendWebhook(p);
     return Map.of("id", "ref_" + UUID.randomUUID(), "status", "PENDING");
   }
@@ -148,7 +163,12 @@ public class PaymentService {
     p.setUpdatedAt(Instant.now());
     payments.save(p);
 
-    sendWebhook(p);
+      // 📡 Dispara sinks de mudança de status
+      WebhookEvent event = WebhookEvent.fromPaymentStatus(p.getStatus());
+      webhookSinkProcessor.dispatch(WebhookEventData.fromPayment(p, event));
+
+
+      sendWebhook(p);
   }
 
   private void sendWebhook(Payment p) {
