@@ -34,3 +34,8 @@ curl -X POST http://localhost:8080/fiadopay/gateway/payments   -H "Authorization
 ```bash
 curl http://localhost:8080/fiadopay/gateway/payments/<paymentId>
 ```
+
+5) **Pedir reemboslo**
+```bash
+curl -X POST http://localhost:8080/fiadopay/gateway/payments/refunds -H "Authorization: Bearer FAKE-<merchantId>" -H "Content-Type: application/json" -d { "paymentId": "<paymentId>" }
+```
