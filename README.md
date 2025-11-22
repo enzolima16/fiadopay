@@ -164,7 +164,7 @@ curl http://localhost:8080/fiadopay/gateway/payments/pay_abc123 \
 ### 5. Solicitar Reembolso
 
 ```bash
-curl -X POST http://localhost:8080/fiadopay/gateway/payments/refunds \
+curl -X POST http://localhost:8080/fiadopay/gateway/refunds \
   -H "Authorization: Bearer FAKE-1" \
   -d '{"paymentId":"pay_abc123"}'
 ```
