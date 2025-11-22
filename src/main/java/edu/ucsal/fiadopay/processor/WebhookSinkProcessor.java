@@ -30,7 +30,7 @@ public class WebhookSinkProcessor {
         this.applicationContext = applicationContext;
         this.asyncExecutor = Executors.newFixedThreadPool(5, r -> {
             Thread t = new Thread(r);
-            t.setName("webhook-sink-" + t.getId());
+            t.setName("webhook-sink-" + t.getName());
             t.setDaemon(true);
             return t;
         });

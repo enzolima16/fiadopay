@@ -24,6 +24,7 @@ public class Merchant {
     private String webhookUrl;
 
     @Enumerated(EnumType.STRING)
+    @Builder.Default
     private Status status = Status.ACTIVE;
 
     public enum Status { ACTIVE, BLOCKED }
