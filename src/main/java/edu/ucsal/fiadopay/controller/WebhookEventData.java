@@ -1,6 +1,5 @@
 package edu.ucsal.fiadopay.controller;
 
-import edu.ucsal.fiadopay.annotation.WebhookSink;
 import edu.ucsal.fiadopay.domain.Payment;
 import edu.ucsal.fiadopay.domain.WebhookEvent;
 

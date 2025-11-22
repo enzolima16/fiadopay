@@ -3,7 +3,6 @@ package edu.ucsal.fiadopay.listener;
 
 import edu.ucsal.fiadopay.annotation.WebhookSink;
 import edu.ucsal.fiadopay.controller.WebhookEventData;
-import edu.ucsal.fiadopay.domain.WebhookEvent;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ConcurrentHashMap;

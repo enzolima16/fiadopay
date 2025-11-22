@@ -6,7 +6,6 @@ import edu.ucsal.fiadopay.controller.WebhookEventData;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.TimeoutException;
 @Slf4j
 @Component
 public class FraudAlertListener {
