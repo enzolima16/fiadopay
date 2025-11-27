@@ -149,8 +149,6 @@ public class PaymentService {
     webhookSinkProcessor.dispatch(
         WebhookEventData.fromPayment(payment, WebhookEvent.PAYMENT_CREATED));
 
-    CompletableFuture.runAsync(() -> processAndWebhook(payment.getId()));
-
     if (payment.getStatus() == Payment.Status.PENDING) {
       paymentExecutor.execute(() -> {
           try {
